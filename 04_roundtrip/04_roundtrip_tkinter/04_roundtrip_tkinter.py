@@ -76,10 +76,12 @@ class App(tk.Frame):
         request.
         """
         if self.serialPort.inWaiting() != 0:
+            # Caution: the following line is BLOCKING
+            # Limit the line length of commands
             line = self.serialPort.readline()
             line = line.decode('ascii').strip("\r\n")
             if line[0:3] != "WOG":
-                print(line)  # line not a valid sensor result.
+                print("Bad Line: ", line)  # line not a valid sensor result.
             else:
                 try:
                     data = line.split("\t")
@@ -110,7 +112,7 @@ class App(tk.Frame):
         h = self.winfo_height()
         # max_X = max(self.Line1) + 1e-5
         # max_Y = max(self.Line2) + 1e-5
-        max_all = 200.0
+        max_all = 200.0  # Shouldn't max_all be a function of max_X and max_Y?
         coordsX, coordsY = [], []
         for n in range(0, self.npoints):
             x = (w * n) / self.npoints

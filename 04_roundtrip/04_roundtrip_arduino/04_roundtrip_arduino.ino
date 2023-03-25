@@ -9,6 +9,7 @@ String inputString = "";      // a String to hold incoming data
 bool stringComplete = false;  // whether the string is complete
 int counter = 0;
 bool brightness = LOW;
+bool started = false;
 
 void setup() {
   // initialize digital pin LED_BUILTIN as an output.
@@ -29,23 +30,24 @@ void loop() {
     // if it's a capital H (ASCII 72), turn on the LED:
     if (workingString == "H\n") {
       digitalWrite(LED_BUILTIN, HIGH);
+      started = true;
     }
     // if it's an L (ASCII 76) turn off the LED:
     if (workingString == "L\n") {
       digitalWrite(LED_BUILTIN, LOW);
+      started = false;
     }
-    // respond on serial
-    counter++;
-    if (counter == 11) counter = 0;
-    /*
-    Serial.print("MAG \t");
+  }
+  // respond on serial
+  counter++;
+  if (counter == 11) counter = 0;
+  if (started) {
+    Serial.print("WOG \t");
     Serial.print(counter);
     Serial.print("\t");
-    Serial.print(-counter);
-    Serial.print("\t");
-    Serial.println(counter+2);
-    */
+    Serial.println(-counter);
   }
+  delay(250);
 }
 
 
