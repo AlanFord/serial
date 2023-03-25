@@ -11,15 +11,6 @@ import sys
 import time
 import tkinter as tk
 from serial import Serial, SerialException
-validPort = None
-
-
-def start_button():
-    validPort.write(bytes('H\n', 'UTF-8'))  # note the string termination
-
-
-def stop_button():
-    validPort.write(bytes('L\n', 'UTF-8'))  # note the string termination
 
 
 class App(tk.Frame):
@@ -46,7 +37,7 @@ class App(tk.Frame):
         # configure the "start" button
         button1state = tk.Button(self,
                                  text="START",
-                                 command=start_button,
+                                 command=self.start_button,
                                  height=4,
                                  width=8)
         button1state.grid(row=0, column=0, ipadx=10, padx=10, pady=15)
@@ -54,7 +45,7 @@ class App(tk.Frame):
         # configure the "stop" button
         button2state = tk.Button(self,
                                  text="STOP",
-                                 command=stop_button,
+                                 command=self.stop_button,
                                  height=4,
                                  width=8)
         button2state.grid(row=0, column=1, ipadx=10, padx=10, pady=15)
@@ -68,6 +59,12 @@ class App(tk.Frame):
                                 fill='darkred', width=1)
         self.canvas.grid(row=1, column=0, columnspan=2,
                          sticky=tk.N + tk.E + tk.W + tk.S)
+
+    def stop_button(self):
+        self.serialPort.write(bytes('L\n', 'UTF-8'))  # note the string termination
+
+    def start_button(self):
+        self.serialPort.write(bytes('H\n', 'UTF-8'))  # note the string termination
 
     def on_resize(self, event):
         self.replot()
@@ -126,7 +123,6 @@ class App(tk.Frame):
 
 
 def main(args=None):
-    global validPort
     if args is None:
         args = sys.argv
     # port, baudrate = '/dev/tty.usbmodem14101', 9600  # uno
@@ -137,14 +133,14 @@ def main(args=None):
         baudrate = int(args[2])
     root = tk.Tk()
     try:
-        validPort = Serial(port, baudrate)
+        serialPort = Serial(port, baudrate)
         print("Reset Arduino")
         time.sleep(2)
     except SerialException:
         print("Sorry, invalid serial port.\n")
         print("Did you update it in the script?\n")
         return 0
-    app = App(root, "Smooth Sailing", validPort)
+    app = App(root, "Smooth Sailing", serialPort)
     app.read_serial()
     app.mainloop()
     return 0
