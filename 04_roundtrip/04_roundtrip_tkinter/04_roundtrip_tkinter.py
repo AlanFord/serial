@@ -59,6 +59,8 @@ class App(tk.Frame):
                                 fill='darkred', width=1)
         self.canvas.grid(row=1, column=0, columnspan=2,
                          sticky=tk.N + tk.E + tk.W + tk.S)
+        self.canvasHalfHeight = self.canvas.winfo_height()/2
+        self.canvasWidth = self.canvas.winfo_width()
 
     def stop_button(self):
         self.serialPort.write(bytes('L\n', 'UTF-8'))  # note the string termination
@@ -67,6 +69,8 @@ class App(tk.Frame):
         self.serialPort.write(bytes('H\n', 'UTF-8'))  # note the string termination
 
     def on_resize(self, event):
+        self.canvasHalfHeight = self.canvas.winfo_height()/2
+        self.canvasWidth = self.canvas.winfo_width()
         self.replot()
 
     def read_serial(self):
@@ -95,9 +99,14 @@ class App(tk.Frame):
     def append_values(self, x, y):
         """
         Update the cached data lists with new sensor values.
+        Updating is performed by appending the new sensor values
+        to the end of the data lists and then extracting a subset
+        of npoints starting at the end of the list (i.e. dropping
+        the first value)
         """
         self.Line1.append(float(x))
         self.Line1 = self.Line1[-1 * self.npoints:]
+
         self.Line2.append(float(y))
         self.Line2 = self.Line2[-1 * self.npoints:]
         return
@@ -108,18 +117,22 @@ class App(tk.Frame):
         The lines are scaled to match the canvas size as the window may
         be resized by the user.
         """
-        w = self.winfo_width()
-        h = self.winfo_height()
-        # max_X = max(self.Line1) + 1e-5
-        # max_Y = max(self.Line2) + 1e-5
-        max_all = 200.0  # Shouldn't max_all be a function of max_X and max_Y?
+        w = self.canvasWidth
+        hh = self.canvasHalfHeight
+        max_X = max(self.Line1) + 1e-5
+        min_X = min(self.Line1) - 1e-5
+        max_Y = max(self.Line2) + 1e-5
+        min_Y = min(self.Line2) - 1e-5
+        max_all = max(max_X, -min_X, max_Y, -min_Y)
         coordsX, coordsY = [], []
         for n in range(0, self.npoints):
             x = (w * n) / self.npoints
             coordsX.append(x)
-            coordsX.append(h - ((h * (self.Line1[n]+100)) / max_all))
+            coordsX.append(hh * (1 + self.Line1[n]/ max_all))
+            # coordsX.append(h - ((h * (self.Line1[n]+100)) / max_all))
             coordsY.append(x)
-            coordsY.append(h - ((h * (self.Line2[n]+100)) / max_all))
+            coordsY.append(hh * (1 + self.Line2[n]/ max_all))
+            # coordsY.append(h - ((h * (self.Line2[n]+100)) / max_all))
         self.canvas.coords('X', *coordsX)
         self.canvas.coords('Y', *coordsY)
 
