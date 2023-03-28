@@ -4,7 +4,9 @@ This project is an attempt to catalog several methods for monitoring the output
 of a microcontroller, not just watching the output scroll-by on a serial
 terminal.
 
-Each folder documents a separate method - some simple, some more complex.  Note that the scripts that involve serial transmission from a Python script to a microcontroller do not yet function with an Arduino Uno.  It is likely that this problem will occur with any Arduino that uses on-board USB hardware.  
+Each folder documents a separate method - some simple, some more complex.  
+
+Note that python scripts that open a serial port A) do not specify a timeout, and B) set rtscts=True.  These result in proper communication with an Arduino Uno, but do not interfere with proper communication with an STM32 NUCLEO board.  This test has been run on MacOS - if problems occur with Windows or Linux try removing rtscts=True.
 
 1. 01_send - A basic Arduino sketch sending data to a serial connection.  Serial output can be monitored on the Arduino IDE Serial Monitor.  This is what I would eventually like to avoid. It has been tested on both an Arduino Uno as well as an STM32 NUCLEO 746ZG board.
 2. 02_graph - An arduino sketch sending data to be plotted on a computer.  Two methods of displaying the results are provided - a processing sketch and a Python script using Tkinter.  The processing sketch displays two variables in separate live graphs.  The Python script displays both variables overlayed in a single live graph.  Both have been tested on both an Arduino Uno as well as an STM32 NUCLEO 746ZG board
