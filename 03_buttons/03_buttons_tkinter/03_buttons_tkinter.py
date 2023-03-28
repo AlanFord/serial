@@ -20,8 +20,8 @@ def off_button():
 
 
 # change the COM port below
-ser = serial.Serial('/dev/tty.usbmodem14103', 9600)  # stm32 nucleo
-# ser = serial.Serial('/dev/tty.usbmodem14101', 9600, timeout=5, xonxoff=False)  # arduino
+#ser = serial.Serial('/dev/tty.usbmodem14103', 9600, rtscts=True)  # stm32 nucleo
+ser = serial.Serial('/dev/tty.usbmodem14101', 9600, rtscts=True)  # arduino
 print("Reset Arduino (not really needed for nucleo)")
 time.sleep(2)
 ser.write(bytes('L', 'UTF-8'))
