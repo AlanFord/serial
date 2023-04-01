@@ -36,6 +36,13 @@ class GuiPart(tk.Frame):
         self.queue = queue
 
         self.serialPort = serialPort
+        # stop the microcontroller (if it's currently running),
+        # empty the serial buffer,
+        # and empty the queue (just in case)
+        self.stop_button()
+        serialPort.reset_input_buffer()
+        with queue.mutex:
+            queue.queue.clear()
 
         # these lists hold data for the two lines to be plotted
         self.npoints = 100
@@ -98,13 +105,15 @@ class GuiPart(tk.Frame):
         """
         Event handler for the Stop button
         """
-        self.serialPort.write(bytes('L\n', 'UTF-8'))  # note the string termination
+        # note the string termination
+        self.serialPort.write(bytes('L\n', 'UTF-8'))
 
     def start_button(self):
         """
         Event handler for the Start button
         """
-        self.serialPort.write(bytes('H\n', 'UTF-8'))  # note the string termination
+        # note the string termination
+        self.serialPort.write(bytes('H\n', 'UTF-8'))
 
     def on_resize(self, event):
         """
@@ -146,14 +155,38 @@ class GuiPart(tk.Frame):
         while self.queue.qsize():
             try:
                 msg = self.queue.get(0)
-                # Check contents of message and do whatever is needed. As a
-                # simple example, let's print it (in real life, you would
-                # suitably update the GUI's display in a richer fashion).
-                print(msg)
+                msg = msg.decode('ascii').strip("\r\n")
+                # Check contents of message,
+                # append values to the list, and replot.
+                if msg[0:3] != "WOG":
+                    print("Bad Message: ", msg)  # line not valid
+                else:
+                    try:
+                        data = msg.split("\t")
+                        x, y = data[1], data[2]
+                        self.append_values(x, y)
+                        self.after_idle(self.replot)
+                    except Exception as e:
+                        print(e)
             except queue.Empty:
                 # just on general principles, although we don't expect this
                 # branch to be taken in this case, ignore this exception!
                 pass
+
+    def append_values(self, x, y):
+        """
+        Update the cached data lists with new sensor values.
+        Updating is performed by appending the new sensor values
+        to the end of the data lists and then extracting a subset
+        of npoints starting at the end of the list (i.e. dropping
+        the first value)
+        """
+        self.Line1.append(float(x))
+        self.Line1 = self.Line1[-1 * self.npoints:]
+
+        self.Line2.append(float(y))
+        self.Line2 = self.Line2[-1 * self.npoints:]
+        return
 
 
 class ThreadedClient(object):
@@ -194,9 +227,10 @@ class ThreadedClient(object):
 
     def workerThread1(self):
         """
-        This is where we handle the asynchronous serial I/O.  For example, it may be
-        a 'select()'.  One important thing to remember is that the thread has
-        to yield control pretty regularly, be it by select or otherwise.
+        This is where we handle the asynchronous I/O.  For example, it
+        may be a 'select()'.  One important thing to remember is that the
+        thread has to yield control pretty regularly, be it by select or
+        otherwise.
         """
         while self.running:
             if self.serialPort.inWaiting() != 0:
