@@ -1,7 +1,16 @@
+"""
+Reference: https://arduino.stackexchange.com/questions/17486/graph-plotting-on-python-using-tkinter-canvas
+Reference: https://www.oreilly.com/library/view/python-cookbook/0596001673/ch09s07.html
+
+Read stream of lines from an Arduino. This
+produces 2 values per line every 500ms. Each line looks like:
+WOG   1.00    -2.00
+with each data line starting with "WOG" and each field separated by
+tab characters. Values are integers in ASCII encoding.
+"""
 import tkinter as tk
 import time
 import threading
-import random
 import queue
 from serial import Serial, SerialException
 
@@ -13,7 +22,7 @@ class GuiPart(tk.Frame):
     parent window is generically instantiated by the main routine
     prior to the instatiation of GuiPart
     """
-    def __init__(self, parent, queue, endCommand):
+    def __init__(self, parent, queue, endCommand, serialPort):
         """
         Intializes the primary tkinter frame
         Arguments:
@@ -25,6 +34,8 @@ class GuiPart(tk.Frame):
 
         # queue holding strings collected by the serial thread
         self.queue = queue
+
+        self.serialPort = serialPort
 
         # these lists hold data for the two lines to be plotted
         self.npoints = 100
@@ -87,15 +98,13 @@ class GuiPart(tk.Frame):
         """
         Event handler for the Stop button
         """
-        pass
-        # self.serialPort.write(bytes('L\n', 'UTF-8'))  # note the string termination
+        self.serialPort.write(bytes('L\n', 'UTF-8'))  # note the string termination
 
     def start_button(self):
         """
         Event handler for the Start button
         """
-        pass
-        # self.serialPort.write(bytes('H\n', 'UTF-8'))  # note the string termination
+        self.serialPort.write(bytes('H\n', 'UTF-8'))  # note the string termination
 
     def on_resize(self, event):
         """
@@ -153,17 +162,18 @@ class ThreadedClient(object):
     endApplication could reside in the GUI part, but putting them here
     means that you have all the thread controls in a single place.
     """
-    def __init__(self, master):
+    def __init__(self, master, serialPort):
         """
         Start the GUI and the asynchronous threads.  We are in the main
         (original) thread of the application, which will later be used by
         the GUI as well.  We spawn a new thread for the worker (I/O).
         """
         self.master = master
+        self.serialPort = serialPort
         # Create the queue
         self.queue = queue.Queue()
         # Set up the GUI part
-        self.gui = GuiPart(master, self.queue, self.endApplication)
+        self.gui = GuiPart(master, self.queue, self.endApplication, serialPort)
         # Set up the thread to do asynchronous I/O
         # More threads can also be created and used, if necessary
         self.running = True
@@ -189,17 +199,27 @@ class ThreadedClient(object):
         to yield control pretty regularly, be it by select or otherwise.
         """
         while self.running:
-            # To simulate asynchronous I/O, create a random number at random
-            # intervals. Replace the following two lines with the real thing.
-            time.sleep(rand.random() * 1.5)
-            msg = rand.random()
-            self.queue.put(msg)
+            if self.serialPort.inWaiting() != 0:
+                # Caution: the following line is BLOCKING
+                line = self.serialPort.readline()
+                self.queue.put(line)
 
     def endApplication(self):
         self.running = False
 
 
-rand = random.Random()
+# rand = random.Random()
+# port, baudrate = '/dev/tty.usbmodem14203', 9600  # uno
+port, baudrate = '/dev/tty.usbmodem14103', 9600  # stm32
 root = tk.Tk()
-client = ThreadedClient(root)
+try:
+    serialPort = Serial(port, baudrate, rtscts=True)
+    print("Reset Arduino")
+    time.sleep(2)
+except SerialException:
+    print("Sorry, invalid serial port.\n")
+    print("Did you update it in the script?\n")
+    import sys
+    sys.exit(1)
+client = ThreadedClient(root, serialPort)
 root.mainloop()
