@@ -100,7 +100,7 @@ def main(args=None):
         baudrate = int(args[2])
     root = tk.Tk()
     try:
-        validPort = Serial(port, baudrate)
+        validPort = Serial(port, baudrate, rtscts=True)
         print("Reset Arduino (not really needed for nucleo)")
         time.sleep(2)
     except SerialException:

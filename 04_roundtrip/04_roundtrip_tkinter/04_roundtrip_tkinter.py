@@ -140,15 +140,15 @@ class App(tk.Frame):
 def main(args=None):
     if args is None:
         args = sys.argv
-    # port, baudrate = '/dev/tty.usbmodem14101', 9600  # uno
-    port, baudrate = '/dev/tty.usbmodem14103', 9600  # stm32
+    port, baudrate = '/dev/tty.usbmodem14101', 9600  # uno
+    # port, baudrate = '/dev/tty.usbmodem14103', 9600  # stm32
     if len(args) > 1:
         port = args[1]
     if len(args) > 2:
         baudrate = int(args[2])
     root = tk.Tk()
     try:
-        serialPort = Serial(port, baudrate)
+        serialPort = Serial(port, baudrate, rtscts=True)
         print("Reset Arduino")
         time.sleep(2)
     except SerialException:
