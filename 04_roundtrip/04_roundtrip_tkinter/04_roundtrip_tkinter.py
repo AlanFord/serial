@@ -128,11 +128,9 @@ class App(tk.Frame):
         for n in range(0, self.npoints):
             x = (w * n) / self.npoints
             coordsX.append(x)
-            coordsX.append(hh * (1 + self.Line1[n]/ max_all))
-            # coordsX.append(h - ((h * (self.Line1[n]+100)) / max_all))
+            coordsX.append(hh * (1 + self.Line1[n] / max_all))
             coordsY.append(x)
-            coordsY.append(hh * (1 + self.Line2[n]/ max_all))
-            # coordsY.append(h - ((h * (self.Line2[n]+100)) / max_all))
+            coordsY.append(hh * (1 + self.Line2[n] / max_all))
         self.canvas.coords('X', *coordsX)
         self.canvas.coords('Y', *coordsY)
 
