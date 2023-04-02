@@ -8,6 +8,7 @@ WOG   1.00    -2.00
 with each data line starting with "WOG" and each field separated by
 tab characters. Values are integers in ASCII encoding.
 """
+import sys
 import tkinter as tk
 import time
 import threading
@@ -35,14 +36,15 @@ class GuiPart(tk.Frame):
         # queue holding strings collected by the serial thread
         self.queue = queue
 
+        self.parent = parent
         self.serialPort = serialPort
         # stop the microcontroller (if it's currently running),
         # empty the serial buffer,
         # and empty the queue (just in case)
         self.stop_button()
-        serialPort.reset_input_buffer()
-        with queue.mutex:
-            queue.queue.clear()
+        self.serialPort.reset_input_buffer()
+        with self.queue.mutex:
+            self.queue.queue.clear()
 
         # these lists hold data for the two lines to be plotted
         self.npoints = 100
@@ -50,10 +52,10 @@ class GuiPart(tk.Frame):
         self.Line2 = [0 for x in range(self.npoints)]
 
         # configure the geometry of parent window
-        parent.wm_title("Smooth Sailing")
-        parent.wm_geometry("800x600")
-        parent.grid_rowconfigure(0, weight=1)
-        parent.grid_columnconfigure(0, weight=1)
+        self.parent.wm_title("Smooth Sailing")
+        self.parent.wm_geometry("800x600")
+        self.parent.grid_rowconfigure(0, weight=1)
+        self.parent.grid_columnconfigure(0, weight=1)
 
         # configure self (the primary Frame)
         self.grid_rowconfigure(0, weight=1)
@@ -87,7 +89,7 @@ class GuiPart(tk.Frame):
         button3state.grid(row=0, column=2, ipadx=10, padx=10, pady=15)
         # close the thread if the window is closed
         # instead of using the "Done" button
-        root.protocol("WM_DELETE_WINDOW", endCommand)
+        self.parent.protocol("WM_DELETE_WINDOW", endCommand)
 
         # configure the canvas for plotting data
         self.canvas = tk.Canvas(self, background="white")
@@ -222,7 +224,6 @@ class ThreadedClient(object):
         if not self.running:
             # This is the brutal stop of the system.  You may want to do
             # some cleanup before actually shutting it down.
-            import sys
             sys.exit(1)
 
     def workerThread1(self):
@@ -242,18 +243,27 @@ class ThreadedClient(object):
         self.running = False
 
 
-# rand = random.Random()
-# port, baudrate = '/dev/tty.usbmodem14203', 9600  # uno
-port, baudrate = '/dev/tty.usbmodem14103', 9600  # stm32
-root = tk.Tk()
-try:
-    serialPort = Serial(port, baudrate, rtscts=True)
-    print("Reset Arduino")
-    time.sleep(2)
-except SerialException:
-    print("Sorry, invalid serial port.\n")
-    print("Did you update it in the script?\n")
-    import sys
-    sys.exit(1)
-client = ThreadedClient(root, serialPort)
-root.mainloop()
+def main(args=None):
+    if args is None:
+        args = sys.argv
+    if len(args) > 1:
+        port = args[1]
+    if len(args) > 2:
+        baudrate = int(args[2])
+    port, baudrate = '/dev/tty.usbmodem14101', 9600  # uno
+    # port, baudrate = '/dev/tty.usbmodem14103', 9600  # stm32
+    root = tk.Tk()
+    try:
+        serialPort = Serial(port, baudrate, rtscts=True)
+        print("Reset Arduino")
+        time.sleep(2)
+    except SerialException:
+        print("Sorry, invalid serial port.\n")
+        print("Did you update it in the script?\n")
+        sys.exit(1)
+    client = ThreadedClient(root, serialPort)
+    root.mainloop()
+
+
+if __name__ == '__main__':
+    main()
