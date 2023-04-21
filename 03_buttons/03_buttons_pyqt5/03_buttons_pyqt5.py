@@ -1,7 +1,7 @@
 import sys
 from serial import Serial, SerialException
 import time
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSlot
 from PyQt5.QtWidgets import \
     QApplication, \
     QMainWindow, \
@@ -35,15 +35,18 @@ class MainWindow(QMainWindow):
         widget.setLayout(layout)
         self.setCentralWidget(widget)
 
+    @pyqtSlot()
     def quit_button(self):
         self.serialPort.write(bytes('L', 'UTF-8'))
         # app will close when last (only) window is closed
         self.close()
 
+    @pyqtSlot()
     def on_button(self):
         self.status.setText("LED ON")
         self.serialPort.write(bytes('H', 'UTF-8'))
 
+    @pyqtSlot()
     def off_button(self):
         self.status.setText("LED OFF")
         self.serialPort.write(bytes('L', 'UTF-8'))
