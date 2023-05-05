@@ -61,7 +61,7 @@ class Thread(QThread):
                     try:
                         line = line[3:].strip()
                         print("WOG line:",line)
-                        #  self.result.emit(line)
+                        self.result.emit(line)
                     except Exception as e:
                         print(e)
 
@@ -77,7 +77,7 @@ class Thread(QThread):
         # note the string termination
         self.serialPort.write(bytes('L\n', 'UTF-8'))
 
-    @pyqtSlot()
+    # @pyqtSlot()
     def start_remote(self):
         """
         Event handler for the Start button
@@ -157,22 +157,19 @@ class MainWindow(QMainWindow):
         # Terminate the exec_ loop
         QCoreApplication.quit()
 
-    @pyqtSlot()
-    def update_plot_data(self, data):
-        print(data)
-
-
-"""         self.x = self.x[1:]  # Remove the first y element.
+    @pyqtSlot(str)
+    def update_plot_data(self, badaboom):
+        print(badaboom)
+"""         self.x = self.x[1:]  # Remove the first x element.
         self.x.append(
             self.x[-1] + 1
         )  # Add a new value 1 higher than the last.
 
-        self.y = self.y[1:]  # Remove the first
+        self.y = self.y[1:]  # Remove the first y element.
         self.y.append(randint(0, 100))  # Add a new random value.
 
         self.data_line.setData(self.x, self.y)  # Update the data.
  """
-
 
 def main(args=None):
     if args is None:
