@@ -8,6 +8,7 @@ tab characters. Values are integers in ASCII encoding.
 import sys
 import time
 from random import randint
+from serial import Serial, SerialException
 
 from PyQt5.QtCore import (
     Qt,
@@ -30,61 +31,72 @@ import pyqtgraph as pg  # import PyQtGraph after Qt
 
 class Thread(QThread):
     """
-    Worker thread
+    Worker thread.
+    Signals when new data arrives.
+    Signal includes string.
+    Reads from serial port ONLY if data waiting.
     """
 
     result = pyqtSignal(str)
 
-    def __init__(self, initial_counter):
+    def __init__(self, serialPort):
         super().__init__()
-        self.counter = initial_counter
+        self.serialPort = serialPort
 
-    @pyqtSlot()
     def run(self):
         """
         Your code goes in this method
         """
         self.is_running = True
-        self.waiting_for_data = True
-        while True:
-            while self.waiting_for_data:
-                if not self.is_running:
-                    return  # Exit thread.
-                time.sleep(0.1)  # wait for data <1>.
+        while self.is_running:
+            if self.serialPort.inWaiting() != 0:
+                # Caution: the following line is BLOCKING
+                line = self.serialPort.readline()
+                # self.queue.put(line)
+                line = line.decode('ascii').strip("\r\n")
+                # Check contents of message,
+                if line[0:3] != "WOG":
+                    print("Bad Message: ", line)  # line not valid
+                else:
+                    try:
+                        line = line[3:].strip()
+                        print("WOG line:",line)
+                        #  self.result.emit(line)
+                    except Exception as e:
+                        print(e)
 
-            # Output the number as a formatted string.
-            self.counter += self.input_add
-            self.counter *= self.input_multiply
-            # self.result.emit(f"The cumulative total is {self.counter}")
-            self.waiting_for_data = True
-
-    def send_data(self, add, multiply):
-        """
-        Receive data onto internal variable.
-        """
-        self.input_add = add
-        self.input_multiply = multiply
-        self.waiting_for_data = False
-
+    @pyqtSlot()
     def stop(self):
         self.is_running = False
+
+    @pyqtSlot()
+    def stop_remote(self):
+        """
+        Event handler for the Stop button
+        """
+        # note the string termination
+        self.serialPort.write(bytes('L\n', 'UTF-8'))
+
+    @pyqtSlot()
+    def start_remote(self):
+        """
+        Event handler for the Start button
+        """
+        # note the string termination
+        self.serialPort.write(bytes('H\n', 'UTF-8'))
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        # Create thread and start it.
-        self.thread = Thread(500)
-        self.thread.start()
-
         # Create the push buttons
-        button1 = QPushButton("START")
-        button2 = QPushButton("STOP")
-        button3 = QPushButton("Done")
-        button1.pressed.connect(self.start_button)
-        button2.pressed.connect(self.stop_button)
-        button3.pressed.connect(self.done_button)
+        self.button1 = QPushButton("START")
+        self.button2 = QPushButton("STOP")
+        self.button3 = QPushButton("Done")
+        # button1.pressed.connect(self.start_button)
+        # button2.pressed.connect(self.stop_button)
+        # button3.pressed.connect(self.done_button)
 
         # >>>  TEMPORARY: DELETE when plot is added
         self.status = QLabel("Starting...")
@@ -105,17 +117,17 @@ class MainWindow(QMainWindow):
             self.x, self.y, pen=pen
         )  # <1>
 
-        self.timer = QTimer()
-        self.timer.setInterval(50)
-        self.timer.timeout.connect(self.update_plot_data)
-        self.timer.start()
+        # self.timer = QTimer()
+        # self.timer.setInterval(50)
+        # self.timer.timeout.connect(self.update_plot_data)
+        # self.timer.start()
 
         # Window layout
         container = QWidget()
         layout = QVBoxLayout()
-        layout.addWidget(button1)
-        layout.addWidget(button2)
-        layout.addWidget(button3)
+        layout.addWidget(self.button1)
+        layout.addWidget(self.button2)
+        layout.addWidget(self.button3)
         layout.addWidget(self.status)
         layout.addWidget(self.graphWidget)
         container.setLayout(layout)
@@ -124,31 +136,33 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(container)
         self.show()
 
-    def stop_button(self):
-        """
-        Event handler for the Stop button
-        """
-        # note the string termination
-        # self.serialPort.write(bytes('L\n', 'UTF-8'))
-        self.status.setText("STOP pressed")
+    # def stop_button(self):
+    #     """
+    #     Event handler for the Stop button
+    #     """
+    #     # note the string termination
+    #     # self.serialPort.write(bytes('L\n', 'UTF-8'))
+    #     self.status.setText("STOP pressed")
 
-    def start_button(self):
-        """
-        Event handler for the Start button
-        """
-        # note the string termination
-        # self.serialPort.write(bytes('H\n', 'UTF-8'))
-        self.status.setText("START pressed")
+    # def start_button(self):
+    #     """
+    #     Event handler for the Start button
+    #     """
+    #     # note the string termination
+    #     # self.serialPort.write(bytes('H\n', 'UTF-8'))
+    #     self.status.setText("START pressed")
 
+    @pyqtSlot()
     def done_button(self):
-        # Shutdown the thread nicely.
-        self.thread.stop()
         # Terminate the exec_ loop
         QCoreApplication.quit()
 
-    def update_plot_data(self):
+    @pyqtSlot()
+    def update_plot_data(self, data):
+        print(data)
 
-        self.x = self.x[1:]  # Remove the first y element.
+
+"""         self.x = self.x[1:]  # Remove the first y element.
         self.x.append(
             self.x[-1] + 1
         )  # Add a new value 1 higher than the last.
@@ -157,8 +171,44 @@ class MainWindow(QMainWindow):
         self.y.append(randint(0, 100))  # Add a new random value.
 
         self.data_line.setData(self.x, self.y)  # Update the data.
+ """
 
 
-app = QApplication(sys.argv)
-window = MainWindow()
-app.exec_()
+def main(args=None):
+    if args is None:
+        args = sys.argv
+    if len(args) > 1:
+        port = args[1]
+    if len(args) > 2:
+        baudrate = int(args[2])
+    # port, baudrate = '/dev/tty.usbmodem14101', 9600  # uno
+    port, baudrate = '/dev/tty.usbmodem14103', 9600  # stm32
+    app = QApplication(sys.argv)
+    try:
+        serialPort = Serial(port, baudrate, rtscts=True)
+        print("Reset Arduino")
+        time.sleep(2)
+    except SerialException:
+        print("Sorry, invalid serial port.\n")
+        print("Did you update it in the script?\n")
+        sys.exit(1)
+
+    # create the worker and the window
+    worker = Thread(serialPort)
+    window = MainWindow()
+
+    # configure the call-backs
+    worker.result.connect(window.update_plot_data)
+    window.button1.clicked.connect(worker.start_remote)
+    window.button2.clicked.connect(worker.stop_remote)
+    window.button3.clicked.connect(worker.stop)
+    window.button3.clicked.connect(window.done_button)
+
+    # start the thread
+    worker.start()
+
+    app.exec_()
+
+
+if __name__ == '__main__':
+    main()
