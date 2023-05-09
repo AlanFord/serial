@@ -32,12 +32,16 @@ from PyQt5.QtWidgets import (
     QMainWindow,
     QPushButton,
     QVBoxLayout,
-    QWidget
+    QWidget,
 )
 
-from PyQt5.QtGui import QPixmap, QPainter, QPolygon
-
-# import pyqtgraph as pg  # import PyQtGraph after Qt
+from PyQt5.QtGui import (
+    QPixmap,
+    QPainter,
+    QPolygon,
+    QPen,
+    QColor,
+)
 
 
 # ==========================================================
@@ -181,13 +185,21 @@ class MainWindow(QMainWindow):
         canvas = self.label.pixmap()
         canvas.fill(Qt.white)
         painter = QPainter(self.label.pixmap())
+        pen = QPen()
         myLine = QPolygon()
-        myLine.setPoints(coordsX)
-        painter.drawPolygon(myLine)
-        painter.end()
 
-        # self.canvas.coords('X', *coordsX)
-        # self.canvas.coords('Y', *coordsY)
+        pen.setColor(QColor("red"))
+        painter.setPen(pen)
+        myLine.setPoints(coordsX)
+        painter.drawPolyline(myLine)
+
+        pen.setColor(QColor("black"))
+        painter.setPen(pen)
+        myLine.setPoints(coordsY)
+        painter.drawPolyline(myLine)
+
+        painter.end()
+        self.update()
 
 
 # ==========================================================
