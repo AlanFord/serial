@@ -142,11 +142,9 @@ class GuiPart(tk.Frame):
         for n in range(0, self.npoints):
             x = (w * n) / self.npoints
             coordsX.append(x)
-            coordsX.append(hh * (1 + self.Line1[n] / max_all))
-            # coordsX.append(h - ((h * (self.Line1[n]+100)) / max_all))
             coordsY.append(x)
-            coordsY.append(hh * (1 + self.Line2[n] / max_all))
-            # coordsY.append(h - ((h * (self.Line2[n]+100)) / max_all))
+            coordsX.append(hh * (1 - self.Line1[n] / max_all))
+            coordsY.append(hh * (1 - self.Line2[n] / max_all))
         self.canvas.coords('X', *coordsX)
         self.canvas.coords('Y', *coordsY)
 
@@ -250,8 +248,8 @@ def main(args=None):
         port = args[1]
     if len(args) > 2:
         baudrate = int(args[2])
-    port, baudrate = '/dev/tty.usbmodem14101', 9600  # uno
-    # port, baudrate = '/dev/tty.usbmodem14103', 9600  # stm32
+    # port, baudrate = '/dev/tty.usbmodem14101', 9600  # uno
+    port, baudrate = '/dev/tty.usbmodem14103', 9600  # stm32
     root = tk.Tk()
     try:
         serialPort = Serial(port, baudrate, rtscts=True)
