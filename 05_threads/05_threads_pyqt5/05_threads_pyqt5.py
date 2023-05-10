@@ -61,7 +61,9 @@ class Thread(QThread):
 
     def run(self):
         """
-        Your code goes in this method
+        This method reads text from the serial port,
+        parses the text into two floats, and signals
+        to GUI to update the plot.
         """
         self.is_running = True
         while self.is_running:
@@ -83,6 +85,10 @@ class Thread(QThread):
 
     @pyqtSlot()
     def stop(self):
+        """
+        Event handler for the Done button
+        """
+        self.stop_remote()
         self.is_running = False
 
     @pyqtSlot()
@@ -104,6 +110,9 @@ class Thread(QThread):
 
 # ==========================================================
 class MainWindow(QMainWindow):
+    """
+    GUI window for the application.
+    """
     def __init__(self):
         super().__init__()
 
@@ -149,38 +158,48 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot()
     def done_button(self):
+        """
+        Event handler for the Done button.
+        Stops the application.
+        """
         # Terminate the exec_ loop
         QCoreApplication.quit()
 
     @pyqtSlot(float, float)
     def update_plot_data(self, x, y):
-        # scale and transform the data
-        print("x is ", x, ", y is ", y)
+        """
+        Updates the display with the latest data
+        received from the serial connection.
+        """
         self.Line1 = self.Line1[1:]  # Remove the first element.
         self.Line1.append(int(x))  # add the new value.
 
         self.Line2 = self.Line2[1:]  # Remove the first element.
         self.Line2.append(int(y))  # Add the new value.
-        """
-        Update the canvas graph lines from the cached data lists.
-        The lines are scaled to match the canvas size as the window may
-        be resized by the user.
-        """
+
         w = self.canvasWidth
         hh = self.canvasHalfHeight
+        # rescale based on the latest data
         max_X = max(self.Line1) + 1e-5
         min_X = min(self.Line1) - 1e-5
         max_Y = max(self.Line2) + 1e-5
         min_Y = min(self.Line2) - 1e-5
         max_all = max(max_X, -min_X, max_Y, -min_Y)
+
+        # build the lists reqired for drawPolyLine
         coordsX, coordsY = [], []
         for n in range(0, self.npoints):
             x = (w * n) / self.npoints
             coordsX.append(x)
-            coordsX.append(hh * (1 - self.Line1[n] / max_all))
             coordsY.append(x)
+            # scale and translate the data to screen 
+            # coordinates with 0 at the vertical centerline
+            # of the plot
+            coordsX.append(hh * (1 - self.Line1[n] / max_all))
             coordsY.append(hh * (1 - self.Line2[n] / max_all))
+        # retrieve the current canvas from the pixmap
         canvas = self.label.pixmap()
+        # blank the canvas for repainting
         canvas.fill(Qt.white)
         painter = QPainter(self.label.pixmap())
         pen = QPen()
@@ -208,8 +227,10 @@ def main(args=None):
         port = args[1]
     if len(args) > 2:
         baudrate = int(args[2])
+    # pick a port, depending on the microcontroller used
     # port, baudrate = '/dev/tty.usbmodem14101', 9600  # uno
     port, baudrate = '/dev/tty.usbmodem14103', 9600  # stm32
+
     app = QApplication(sys.argv)
     try:
         serialPort = Serial(port, baudrate, rtscts=True)
@@ -220,7 +241,7 @@ def main(args=None):
         print("Did you update it in the script?\n")
         sys.exit(1)
 
-    # create the worker and the window
+    # create the worker thread and the window
     worker = Thread(serialPort)
     window = MainWindow()
 
