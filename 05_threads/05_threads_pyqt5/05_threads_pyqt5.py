@@ -33,6 +33,8 @@ from PyQt5.QtWidgets import (
     QPushButton,
     QVBoxLayout,
     QWidget,
+    QDesktopWidget,
+    QSizePolicy,
 )
 
 from PyQt5.QtGui import (
@@ -113,19 +115,49 @@ class MainWindow(QMainWindow):
     """
     GUI window for the application.
     """
+    # create a signal (replot) tied to the slot update_plot_data()
+    replot = pyqtSignal()
+
     def __init__(self):
         super().__init__()
+        self.resize(QDesktopWidget().availableGeometry(self).size() * 0.7)
+        self.replot.connect(self.update_plot_data)
 
         # Create the push buttons
         self.button1 = QPushButton("START")
         self.button2 = QPushButton("STOP")
         self.button3 = QPushButton("Done")
-
         # create a plot from a label widget
         self.label = QLabel()
-        self.canvasWidth = 400
-        self.canvasHalfHeight = 150
-        canvas = QPixmap(self.canvasWidth, self.canvasHalfHeight*2)
+        self.label.setSizePolicy(
+            QSizePolicy.Expanding,
+            QSizePolicy.Expanding,
+        )
+
+        # build the layout
+        layout = QVBoxLayout()
+        layout.addWidget(self.button1)
+        layout.addWidget(self.button2)
+        layout.addWidget(self.button3)
+        layout.addWidget(self.label)
+
+        # put the layout in a container
+        container = QWidget()
+        container.setLayout(layout)
+
+        # put the containe in the window frame
+        self.setCentralWidget(container)
+
+        # Start the Show!
+        # This must be done to retrieve the proper
+        # label dimensions
+        self.show()
+
+        # now add a canvas to the Qlabel widget
+        # this is done after the layout enabling us
+        # to capture the final label size
+        print("x is ", self.label.width(), " y is ", self.label.height())
+        canvas = QPixmap(self.label.width(), self.label.height())
         canvas.fill(Qt.white)
         self.label.setPixmap(canvas)
 
@@ -133,28 +165,7 @@ class MainWindow(QMainWindow):
         self.npoints = 100
         self.Line1 = [0 for x in range(self.npoints)]
         self.Line2 = [0 for x in range(self.npoints)]
-
-        # painter = QPainter(self.label.pixmap())
-        # painter.drawPolyLine
-        # painter.end()
-
-        # pen = pg.mkPen(color=(255, 0, 0))
-        # self.data_line = self.graphWidget.plot(
-        #     self.x, self.y, pen=pen
-        # )
-
-        # Window layout
-        container = QWidget()
-        layout = QVBoxLayout()
-        layout.addWidget(self.button1)
-        layout.addWidget(self.button2)
-        layout.addWidget(self.button3)
-        layout.addWidget(self.label)
-        container.setLayout(layout)
-
-        # Start the Show!
-        self.setCentralWidget(container)
-        self.show()
+        self.replot.emit()
 
     @pyqtSlot()
     def done_button(self):
@@ -166,7 +177,7 @@ class MainWindow(QMainWindow):
         QCoreApplication.quit()
 
     @pyqtSlot(float, float)
-    def update_plot_data(self, x, y):
+    def append_data(self, x, y):
         """
         Updates the display with the latest data
         received from the serial connection.
@@ -177,8 +188,18 @@ class MainWindow(QMainWindow):
         self.Line2 = self.Line2[1:]  # Remove the first element.
         self.Line2.append(int(y))  # Add the new value.
 
-        w = self.canvasWidth
-        hh = self.canvasHalfHeight
+        # use a signal here (as opposed to a function call) 
+        # to avoid tangling with replotting
+        # that may be done when resizing
+        self.replot.emit()
+
+    @pyqtSlot()
+    def update_plot_data(self):
+        """
+        replot the canvas with current data
+        """
+        w = self.label.pixmap().width()
+        hh = self.label.pixmap().height()//2
         # rescale based on the latest data
         max_X = max(self.Line1) + 1e-5
         min_X = min(self.Line1) - 1e-5
@@ -192,7 +213,7 @@ class MainWindow(QMainWindow):
             x = (w * n) / self.npoints
             coordsX.append(x)
             coordsY.append(x)
-            # scale and translate the data to screen 
+            # scale and translate the data to screen
             # coordinates with 0 at the vertical centerline
             # of the plot
             coordsX.append(hh * (1 - self.Line1[n] / max_all))
@@ -246,7 +267,7 @@ def main(args=None):
     window = MainWindow()
 
     # configure the call-backs
-    worker.result.connect(window.update_plot_data)
+    worker.result.connect(window.append_data)
     window.button1.clicked.connect(worker.start_remote)
     window.button2.clicked.connect(worker.stop_remote)
     window.button3.clicked.connect(worker.stop)
