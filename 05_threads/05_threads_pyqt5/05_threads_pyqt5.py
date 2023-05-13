@@ -19,12 +19,15 @@ import sys
 import time
 from serial import Serial, SerialException
 
+from typing import Union
+
 from PyQt5.QtCore import (
     Qt,
     QCoreApplication,
     QThread,
     pyqtSignal,
     pyqtSlot,
+    QSize,
 )
 from PyQt5.QtWidgets import (
     QApplication,
@@ -43,7 +46,45 @@ from PyQt5.QtGui import (
     QPolygon,
     QPen,
     QColor,
+    QResizeEvent,
 )
+
+
+# ==========================================================
+class QResizingPixmapLabel(QLabel):
+    def __init__(self):
+        super(QResizingPixmapLabel, self).__init__()
+        self.setMinimumSize(1, 1)
+        self.setScaledContents(False)
+        self._pixmap: Union[QPixmap, None] = None
+
+    def heightForWidth(self, width: int) -> int:
+        if self._pixmap is None:
+            return self.height()
+        else:
+            return self._pixmap.height() * width / self._pixmap.width()
+
+    def scaledPixmap(self) -> QPixmap:
+        scaled = self._pixmap.scaled(
+            self.size() * self.devicePixelRatioF(),
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation
+        )
+        # scaled.setDevicePixelRatio(self.devicePixelRatioF())
+        return scaled
+
+    def setPixmap(self, pixmap: QPixmap) -> None:
+        self._pixmap = pixmap
+        super().setPixmap(pixmap)
+
+    def sizeHint(self) -> QSize:
+        width = self.width()
+        return QSize(width, self.heightForWidth(width))
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        if self._pixmap is not None:
+            super().setPixmap(self.scaledPixmap())
+            self.setAlignment(Qt.AlignCenter)
 
 
 # ==========================================================
@@ -128,7 +169,7 @@ class MainWindow(QMainWindow):
         self.button2 = QPushButton("STOP")
         self.button3 = QPushButton("Done")
         # create a plot from a label widget
-        self.label = QLabel()
+        self.label = QResizingPixmapLabel()
         self.label.setSizePolicy(
             QSizePolicy.Expanding,
             QSizePolicy.Expanding,
@@ -156,10 +197,12 @@ class MainWindow(QMainWindow):
         # now add a canvas to the Qlabel widget
         # this is done after the layout enabling us
         # to capture the final label size
-        print("x is ", self.label.width(), " y is ", self.label.height())
+        print("Initial Canvas: x is ", self.label.width(), " y is ", self.label.height())
         canvas = QPixmap(self.label.width(), self.label.height())
         canvas.fill(Qt.white)
         self.label.setPixmap(canvas)
+        self.w = self.label.pixmap().width()
+        self.hh = self.label.pixmap().height()//2
 
         # these lists hold data for the two lines to be plotted
         self.npoints = 100
@@ -188,7 +231,7 @@ class MainWindow(QMainWindow):
         self.Line2 = self.Line2[1:]  # Remove the first element.
         self.Line2.append(int(y))  # Add the new value.
 
-        # use a signal here (as opposed to a function call) 
+        # use a signal here (as opposed to a function call)
         # to avoid tangling with replotting
         # that may be done when resizing
         self.replot.emit()
@@ -210,14 +253,14 @@ class MainWindow(QMainWindow):
         # build the lists reqired for drawPolyLine
         coordsX, coordsY = [], []
         for n in range(0, self.npoints):
-            x = (w * n) / self.npoints
+            x = (self.w * n) / self.npoints
             coordsX.append(x)
             coordsY.append(x)
             # scale and translate the data to screen
             # coordinates with 0 at the vertical centerline
             # of the plot
-            coordsX.append(hh * (1 - self.Line1[n] / max_all))
-            coordsY.append(hh * (1 - self.Line2[n] / max_all))
+            coordsX.append(self.hh * (1 - self.Line1[n] / max_all))
+            coordsY.append(self.hh * (1 - self.Line2[n] / max_all))
         # retrieve the current canvas from the pixmap
         canvas = self.label.pixmap()
         # blank the canvas for repainting
