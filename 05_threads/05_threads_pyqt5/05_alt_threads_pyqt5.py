@@ -42,7 +42,7 @@ class GraphWidget(qtw.QWidget):
         self.Line1 = deque([0] * data_width, maxlen=data_width)
         self.Line2 = deque([0] * data_width, maxlen=data_width)
         self.max_all = 10
-        
+
     def add_value(self, x, y):
         self.Line1.append(int(x))  # add the new value.
         self.Line2.append(int(y))  # Add the new value.
@@ -327,27 +327,46 @@ class Thread(qtc.QThread):
         self.serialPort.write(bytes('H\n', 'UTF-8'))
 
 
-# ==========================================================
-def main(args=None):
-    if args is None:
-        args = sys.argv
+def open_serial(args):
+    """!
+    Opens one of several serial ports - uses the first
+    one that works.  Returns the serial port object if a serial port is
+    connected, None otherwise
+    """
+    baudrate = 9600
     if len(args) > 1:
         port = args[1]
     if len(args) > 2:
         baudrate = int(args[2])
+    serial_open_failed = False
     # pick a port, depending on the microcontroller used
-    # port, baudrate = '/dev/tty.usbmodem14101', 9600  # uno
-    port, baudrate = '/dev/tty.usbmodem14103', 9600  # stm32
+    for io_unit in [port,
+                    '/dev/tty.usbmodem14101',
+                    '/dev/tty.usbmodem14103']:
+        try:
+            serialPort = Serial(port, baudrate, rtscts=True)
+        except SerialException:
+            serial_open_failed = True
+        if not serial_open_failed:
+            break
+    if serial_open_failed:
+        return None
+    return serialPort
+
+
+# ==========================================================
+def main(args=None):
+    if args is None:
+        args = sys.argv
 
     app = qtc.QApplication(sys.argv)
-    try:
-        serialPort = Serial(port, baudrate, rtscts=True)
-        print("Reset Arduino")
-        time.sleep(2)
-    except SerialException:
-        print("Sorry, invalid serial port.\n")
-        print("Did you update it in the script?\n")
+
+    serialPort = open_serial(args)
+    if serialPort is None:
+        print("Serial connection not active\n")
         sys.exit(1)
+    print("Reset Arduino")
+    time.sleep(2)
 
     # create the worker thread and the window
     worker = Thread(serialPort)
