@@ -17,6 +17,7 @@ Two classes are used
 """
 import sys
 import time
+import random
 from serial import Serial, SerialException
 
 
@@ -28,24 +29,32 @@ from collections import deque
 
 # ==========================================================
 class GraphWidget(qtw.QWidget):
-    """A widget to display a running graph of information"""
+    """!
+    A widget to display a running graph of information
 
-    crit_color = qtg.QColor(255, 0, 0)  # red
-    warn_color = qtg.QColor(255, 255, 0)  # yellow
-    good_color = qtg.QColor(0, 255, 0)  # green
+    The widget maintains two deques of values to be plotted.
+    The plot maintains a vertical zero in the vertical middle
+    of the plot.  The plot will rescale as new data is received
+    and old data is scrolled off to the left.  The plot is
+    refreshed as each new data point is received.
+    """
 
     def __init__(
         self, *args, data_width=100,
         **kwargs
     ):
         super().__init__(*args, **kwargs)
+        # deques containing the current data to be plotted
         self.Line1 = deque([0] * data_width, maxlen=data_width)
         self.Line2 = deque([0] * data_width, maxlen=data_width)
-        self.max_all = 10
+        self.data_width = data_width
+        self.default_data_range = 10
+        self.max_all = self.default_data_range
 
+    @qtc.pyqtSlot(float, float)
     def add_value(self, x, y):
-        self.Line1.append(int(x))  # add the new value.
-        self.Line2.append(int(y))  # Add the new value.
+        self.Line1.append(float(x))  # add the new value.
+        self.Line2.append(float(y))  # Add the new value.
         # rescale based on the latest data
         max_X = max(self.Line1) + 1e-5
         min_X = min(self.Line1) - 1e-5
@@ -54,76 +63,46 @@ class GraphWidget(qtw.QWidget):
         self.max_all = max(max_X, -min_X, max_Y, -min_Y)
         self.update()
 
-    def val_to_y(self, value):
-        data_range = self.maximum - self.minimum
-        value_fraction = value / data_range
-        y_offset = round(value_fraction * self.height())
-        y = self.height() - y_offset
+    def scale_values(self, values):
+        """!
+        convert a list object of values to scaled display points
+        """
+        data_range = self.max_all
+        if data_range == 0.0:  # this should never happen, but just in case
+            data_range = self.default_data_range
+        y = []
+        x_scale = self.width() / self.data_width
+        for n in range(0, self.data_width):
+            value_fraction = values[n] / data_range
+            y_offset = round(value_fraction * self.height()/2)
+            y.append(n * x_scale)
+            y.append(self.height()/2 - y_offset)
         return y
 
     def paintEvent(self, paint_event):
         painter = qtg.QPainter(self)
 
         # draw the background
-        brush = qtg.QBrush(qtg.QColor(48, 48, 48))
+        brush = qtg.QBrush(qtc.Qt.white)
         painter.setBrush(brush)
         painter.drawRect(0, 0, self.width(), self.height())
 
-        # draw the boundary lines
+        # Draw Line 1
         pen = qtg.QPen()
-        pen.setDashPattern([1, 0])
-
-        # warning line
-        warn_y = self.val_to_y(self.warn_val)
-        pen.setColor(self.warn_color)
+        path = self.scale_values(self.Line1)
+        myLine = qtg.QPolygon()
+        myLine.setPoints(path)
+        pen.setColor(qtg.QColor("red"))
         painter.setPen(pen)
-        painter.drawLine(0, warn_y, self.width(), warn_y)
+        painter.drawPolyline(myLine)
 
-        # critical line
-        crit_y = self.val_to_y(self.crit_val)
-        pen.setColor(self.crit_color)
+        # Draw Line 2
+        path = self.scale_values(self.Line2)
+        myLine = qtg.QPolygon()
+        myLine.setPoints(path)
+        pen.setColor(qtg.QColor("black"))
         painter.setPen(pen)
-        painter.drawLine(0, crit_y, self.width(), crit_y)
-
-        # set up gradient brush
-        gradient = qtg.QLinearGradient(
-            qtc.QPointF(0, self.height()), qtc.QPointF(0, 0))
-        gradient.setColorAt(0, self.good_color)
-        gradient.setColorAt(
-            self.warn_val/(self.maximum - self.minimum),
-            self.warn_color)
-        gradient.setColorAt(
-            self.crit_val/(self.maximum - self.minimum),
-            self.crit_color)
-        brush = qtg.QBrush(gradient)
-        painter.setBrush(brush)
-        painter.setPen(qtc.Qt.NoPen)
-
-        # Draw the paths for the chart
-        self.start_value = getattr(self, 'start_value', self.minimum)
-        last_value = self.start_value
-        self.start_value = self.values[0]
-        for indx, value in enumerate(self.values):
-            x = (indx + 1) * self.scale
-            last_x = indx * self.scale
-            y = self.val_to_y(value)
-            last_y = self.val_to_y(last_value)
-            path = qtg.QPainterPath()
-            path.moveTo(x, self.height())
-            path.lineTo(last_x, self.height())
-            path.lineTo(last_x, last_y)
-            # Straight tops
-            #path.lineTo(x, y)
-
-            # Curvy tops
-            c_x = round(self.scale * .5) + last_x
-            c1 = (c_x, last_y)
-            c2 = (c_x, y)
-            path.cubicTo(*c1, *c2, x, y)
-
-            # Draw path
-            painter.drawPath(path)
-            last_value = value
+        painter.drawPolyline(myLine)
 
 
 # ==========================================================
@@ -132,22 +111,22 @@ class MainWindow(qtw.QMainWindow):
     GUI window for the application.
     """
     # create a signal (replot) tied to the slot update_data()
-    new_data = qtc.pyqtSignal()
+    # new_data = qtc.pyqtSignal()
 
     def __init__(self):
         """MainWindow constructor."""
         super().__init__()
         # Code starts here
         self.resize(qtw.QDesktopWidget().availableGeometry(self).size() * 0.7)
-        self.replot.connect(self.update_plot_data)
+        # self.new_data.connect(self.update_plot_data)
 
         # Create the push buttons
         self.button1 = qtw.QPushButton("START")
         self.button2 = qtw.QPushButton("STOP")
         self.button3 = qtw.QPushButton("Done")
-        # create a plot from a label widget
-        self.label = QResizingPixmapLabel()
-        self.label.setSizePolicy(
+        # create a plot from a plot widget
+        self.plot = GraphWidget()
+        self.plot.setSizePolicy(
             qtw.QSizePolicy.Expanding,
             qtw.QSizePolicy.Expanding,
         )
@@ -157,7 +136,7 @@ class MainWindow(qtw.QMainWindow):
         layout.addWidget(self.button1)
         layout.addWidget(self.button2)
         layout.addWidget(self.button3)
-        layout.addWidget(self.label)
+        layout.addWidget(self.plot)
 
         # put the layout in a container
         container = qtw.QWidget()
@@ -167,27 +146,6 @@ class MainWindow(qtw.QMainWindow):
         self.setCentralWidget(container)
 
         # Start the Show!
-        # This must be done to retrieve the proper
-        # label dimensions
-        # self.show()
-
-        # now add a canvas to the Qlabel widget
-        # this is done after the layout enabling us
-        # to capture the final label size
-        print("Initial Canvas: x is ", self.label.width(), " y is ", self.label.height())
-        canvas = qtg.QPixmap(self.label.width(), self.label.height())
-        canvas.fill(qtc.Qt.white)
-        self.label.setPixmap(canvas)
-        self.w = self.label.pixmap().width()
-        self.hh = self.label.pixmap().height()//2
-
-        # these lists hold data for the two lines to be plotted
-        self.npoints = 100
-        self.Line1 = [0 for x in range(self.npoints)]
-        self.Line2 = [0 for x in range(self.npoints)]
-        self.replot.emit()
-
-        # Code ends here
         self.show()
 
     @qtc.pyqtSlot()
@@ -197,70 +155,59 @@ class MainWindow(qtw.QMainWindow):
         Stops the application.
         """
         # Terminate the exec_ loop
-        qtw.QCoreApplication.quit()
+        qtc.QCoreApplication.quit()
 
-    @qtc.pyqtSlot(float, float)
-    def append_data(self, x, y):
+
+# ==========================================================
+class FakeThread(qtc.QThread):
+    """
+    Worker thread.
+    Signals when new data arrives.
+    Signal includes string.
+    Reads from serial port ONLY if data waiting.
+    """
+
+    result = qtc.pyqtSignal(float, float)
+
+    def __init__(self):
+        super().__init__()
+        self.remote_is_running = False
+        self.is_running = False
+
+    def run(self):
         """
-        Updates the display with the latest data
-        received from the serial connection.
+        This method reads text from the serial port,
+        parses the text into two floats, and signals
+        to GUI to update the plot.
         """
-        self.Line1 = self.Line1[1:]  # Remove the first element.
-        self.Line1.append(int(x))  # add the new value.
-
-        self.Line2 = self.Line2[1:]  # Remove the first element.
-        self.Line2.append(int(y))  # Add the new value.
-
-        # use a signal here (as opposed to a function call)
-        # to avoid tangling with replotting
-        # that may be done when resizing
-        self.replot.emit()
+        self.is_running = True
+        while self.is_running:
+            time.sleep(0.25)
+            x = random.random() - 0.5
+            y = random.random() - 0.5
+            self.result.emit(x, y)
 
     @qtc.pyqtSlot()
-    def update_plot_data(self):
+    def stop(self):
         """
-        replot the canvas with current data
+        Event handler for the Done button
         """
-        w = self.label.pixmap().width()
-        hh = self.label.pixmap().height()//2
-        # rescale based on the latest data
-        max_X = max(self.Line1) + 1e-5
-        min_X = min(self.Line1) - 1e-5
-        max_Y = max(self.Line2) + 1e-5
-        min_Y = min(self.Line2) - 1e-5
-        max_all = max(max_X, -min_X, max_Y, -min_Y)
+        self.stop_remote()
+        self.is_running = False
 
-        # build the lists reqired for drawPolyLine
-        coordsX, coordsY = [], []
-        for n in range(0, self.npoints):
-            x = (self.w * n) / self.npoints
-            coordsX.append(x)
-            coordsY.append(x)
-            # scale and translate the data to screen
-            # coordinates with 0 at the vertical centerline
-            # of the plot
-            coordsX.append(self.hh * (1 - self.Line1[n] / max_all))
-            coordsY.append(self.hh * (1 - self.Line2[n] / max_all))
-        # retrieve the current canvas from the pixmap
-        canvas = self.label.pixmap()
-        # blank the canvas for repainting
-        canvas.fill(qtc.Qt.white)
-        painter = qtg.QPainter(self.label.pixmap())
-        pen = qtg.QPen()
-        myLine = qtg.QPolygon()
+    @qtc.pyqtSlot()
+    def stop_remote(self):
+        """
+        Event handler for the Stop button
+        """
+        self.remote_is_running = False
 
-        pen.setColor(qtg.QColor("red"))
-        painter.setPen(pen)
-        myLine.setPoints(coordsX)
-        painter.drawPolyline(myLine)
-
-        pen.setColor(qtg.QColor("black"))
-        painter.setPen(pen)
-        myLine.setPoints(coordsY)
-        painter.drawPolyline(myLine)
-
-        painter.end()
-        self.update()
+    @qtc.pyqtSlot()
+    def start_remote(self):
+        """
+        Event handler for the Start button
+        """
+        self.remote_is_running = True
 
 
 # ==========================================================
@@ -327,6 +274,7 @@ class Thread(qtc.QThread):
         self.serialPort.write(bytes('H\n', 'UTF-8'))
 
 
+# ==========================================================
 def open_serial(args):
     """!
     Opens one of several serial ports - uses the first
@@ -334,20 +282,20 @@ def open_serial(args):
     connected, None otherwise
     """
     baudrate = 9600
+    ports = ['/dev/tty.usbmodem14101',
+             '/dev/tty.usbmodem14103']
     if len(args) > 1:
-        port = args[1]
+        ports.append(args[1])
     if len(args) > 2:
         baudrate = int(args[2])
     serial_open_failed = False
     # pick a port, depending on the microcontroller used
-    for io_unit in [port,
-                    '/dev/tty.usbmodem14101',
-                    '/dev/tty.usbmodem14103']:
+    for io_unit in ports:
         try:
-            serialPort = Serial(port, baudrate, rtscts=True)
+            serialPort = Serial(io_unit, baudrate, rtscts=True)
         except SerialException:
             serial_open_failed = True
-        if not serial_open_failed:
+        if not serial_open_failed:  # break if connected
             break
     if serial_open_failed:
         return None
@@ -359,21 +307,22 @@ def main(args=None):
     if args is None:
         args = sys.argv
 
-    app = qtc.QApplication(sys.argv)
+    app = qtw.QApplication(sys.argv)
 
     serialPort = open_serial(args)
     if serialPort is None:
-        print("Serial connection not active\n")
-        sys.exit(1)
-    print("Reset Arduino")
-    time.sleep(2)
+        print("Serial connection not active, using a dummy\n")
+        worker = FakeThread()
+    else:
+        print("Reset Arduino")
+        time.sleep(2)
+        # create the worker thread and the window
+        worker = Thread(serialPort)
 
-    # create the worker thread and the window
-    worker = Thread(serialPort)
     window = MainWindow()
 
     # configure the call-backs
-    worker.result.connect(window.append_data)
+    worker.result.connect(window.plot.add_value)
     window.button1.clicked.connect(worker.start_remote)
     window.button2.clicked.connect(worker.stop_remote)
     window.button3.clicked.connect(worker.stop)
