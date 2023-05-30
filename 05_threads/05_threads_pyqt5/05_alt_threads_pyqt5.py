@@ -306,18 +306,21 @@ def open_serial(args):
         ports.append(args[1])
     if len(args) > 2:
         baudrate = int(args[2])
-    serial_open_failed = False
     # pick a port, depending on the microcontroller used
+    serial_success = False
     for io_unit in ports:
         try:
+            print("Trying ", io_unit)
             serialPort = Serial(io_unit, baudrate, rtscts=True)
+            serial_success = True
         except SerialException:
-            serial_open_failed = True
-        if not serial_open_failed:  # break if connected
+            print("Serial exception")
+        if serial_success:  # break if connected
             break
-    if serial_open_failed:
+    if serial_success:
+        return serialPort
+    else:
         return None
-    return serialPort
 
 
 # ==========================================================
