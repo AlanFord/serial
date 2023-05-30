@@ -5,15 +5,20 @@ WOG   1.00    -2.00
 with each data line starting with "WOG" and each field separated by
 tab characters. Values are integers in ASCII encoding.
 
-Two classes are used
-    - MainWindow handles all of the graphics, including generating
-    the data plot
-    - Threaded handles the serial communication in a separate
-    thread.
+Three classes are used
+    - GraphWidget is a new widget that draws the data plot and is
+      easily resizable.
+    - MainWindow handles drawing the widgets
+    - Thread handles the serial communication in a separate
+    thread. (FakeThread is used if no serial connection is available)
     - The main() function does the following:
-        - establishes the serial connection
-        - creates instances of the aformentioned classes
-        - creates the signal/slot connections between the instances
+        - calls open_serial to establish a serial connection
+        - creates the worker thread to manage the serial communication
+        - configures all callbacks (signals/slots)
+        - starts the worker thread
+        - starts the event loop running
+    - The open_serial() function encapulsates the code
+        required to open a serial port.
 """
 import sys
 import time
@@ -53,6 +58,11 @@ class GraphWidget(qtw.QWidget):
 
     @qtc.pyqtSlot(float, float)
     def add_value(self, x, y):
+        """!
+        Adds a set of data (two signals - x and y) to the
+        data queues.  Determines the maximum value in the
+        queues.  Forces an update of the graph widget.
+        """
         self.Line1.append(float(x))  # add the new value.
         self.Line2.append(float(y))  # Add the new value.
         # rescale based on the latest data
@@ -65,7 +75,10 @@ class GraphWidget(qtw.QWidget):
 
     def scale_values(self, values):
         """!
-        convert a list object of values to scaled display points
+        Convert a list object of values to scaled display points.
+        Scaling assumes the vertical scale has a zero line at the 
+        veritical midpoint.  X values are scaled to fit the width
+        of the widget.
         """
         data_range = self.max_all
         if data_range == 0.0:  # this should never happen, but just in case
@@ -80,6 +93,10 @@ class GraphWidget(qtw.QWidget):
         return y
 
     def paintEvent(self, paint_event):
+        """!
+        Redraws the widget.  Two display lines are supported;
+        one black and one red.
+        """
         painter = qtg.QPainter(self)
 
         # draw the background
@@ -161,10 +178,8 @@ class MainWindow(qtw.QMainWindow):
 # ==========================================================
 class FakeThread(qtc.QThread):
     """
-    Worker thread.
-    Signals when new data arrives.
-    Signal includes string.
-    Reads from serial port ONLY if data waiting.
+    Fake worker thread.  No serial port is used.
+    Data is generated using a random() function.
     """
 
     result = qtc.pyqtSignal(float, float)
@@ -176,16 +191,19 @@ class FakeThread(qtc.QThread):
 
     def run(self):
         """
-        This method reads text from the serial port,
-        parses the text into two floats, and signals
-        to GUI to update the plot.
+        Fakes data that would be read from a serial port.
+        Two values are generated.  The "is_running" flag
+        controls when the run() method will terminate.
+        The "remote_is_running" determines when to simulate
+        receiving a serial packet.
         """
         self.is_running = True
         while self.is_running:
             time.sleep(0.25)
-            x = random.random() - 0.5
-            y = random.random() - 0.5
-            self.result.emit(x, y)
+            if self.remote_is_running:
+                x = random.random() - 0.5
+                y = random.random() - 0.5
+                self.result.emit(x, y)
 
     @qtc.pyqtSlot()
     def stop(self):
