@@ -5,90 +5,231 @@ WOG   1.00    -2.00
 with each data line starting with "WOG" and each field separated by
 tab characters. Values are integers in ASCII encoding.
 
-Two classes are used
-    - MainWindow handles all of the graphics, including generating
-    the data plot
-    - Threaded handles the serial communication in a separate
-    thread.
+Three classes are used
+    - GraphWidget is a new widget that draws the data plot and is
+      easily resizable.
+    - MainWindow handles drawing the widgets
+    - Thread handles the serial communication in a separate
+    thread. (FakeThread is used if no serial connection is available)
     - The main() function does the following:
-        - establishes the serial connection
-        - creates instances of the aformentioned classes
-        - creates the signal/slot connections between the instances
+        - calls open_serial to establish a serial connection
+        - creates the worker thread to manage the serial communication
+        - configures all callbacks (signals/slots)
+        - starts the worker thread
+        - starts the event loop running
+    - The open_serial() function encapulsates the code
+        required to open a serial port.
 """
 import sys
 import time
+import random
 from serial import Serial, SerialException
 
-from typing import Union
 
-from PyQt5.QtCore import (
-    Qt,
-    QCoreApplication,
-    QThread,
-    pyqtSignal,
-    pyqtSlot,
-    QSize,
-)
-from PyQt5.QtWidgets import (
-    QApplication,
-    QLabel,
-    QMainWindow,
-    QPushButton,
-    QVBoxLayout,
-    QWidget,
-    QDesktopWidget,
-    QSizePolicy,
-)
-
-from PyQt5.QtGui import (
-    QPixmap,
-    QPainter,
-    QPolygon,
-    QPen,
-    QColor,
-    QResizeEvent,
-)
+from PyQt5 import QtWidgets as qtw
+from PyQt5 import QtCore as qtc
+from PyQt5 import QtGui as qtg
+from collections import deque
 
 
 # ==========================================================
-class QResizingPixmapLabel(QLabel):
+class GraphWidget(qtw.QWidget):
+    """!
+    A widget to display a running graph of information
+
+    The widget maintains two deques of values to be plotted.
+    The plot maintains a vertical zero in the vertical middle
+    of the plot.  The plot will rescale as new data is received
+    and old data is scrolled off to the left.  The plot is
+    refreshed as each new data point is received.
+    """
+
+    def __init__(
+        self, *args, data_width=100,
+        **kwargs
+    ):
+        super().__init__(*args, **kwargs)
+        # deques containing the current data to be plotted
+        self.Line1 = deque([0] * data_width, maxlen=data_width)
+        self.Line2 = deque([0] * data_width, maxlen=data_width)
+        self.data_width = data_width
+        self.default_data_range = 10
+        self.max_all = self.default_data_range
+
+    @qtc.pyqtSlot(float, float)
+    def add_value(self, x, y):
+        """!
+        Adds a set of data (two signals - x and y) to the
+        data queues.  Determines the maximum value in the
+        queues.  Forces an update of the graph widget.
+        """
+        self.Line1.append(float(x))  # add the new value.
+        self.Line2.append(float(y))  # Add the new value.
+        # rescale based on the latest data
+        max_X = max(self.Line1) + 1e-5
+        min_X = min(self.Line1) - 1e-5
+        max_Y = max(self.Line2) + 1e-5
+        min_Y = min(self.Line2) - 1e-5
+        self.max_all = max(max_X, -min_X, max_Y, -min_Y)
+        self.update()
+
+    def scale_values(self, values):
+        """!
+        Convert a list object of values to scaled display points.
+        Scaling assumes the vertical scale has a zero line at the 
+        veritical midpoint.  X values are scaled to fit the width
+        of the widget.
+        """
+        data_range = self.max_all
+        if data_range == 0.0:  # this should never happen, but just in case
+            data_range = self.default_data_range
+        y = []
+        x_scale = self.width() / self.data_width
+        for n in range(0, self.data_width):
+            value_fraction = values[n] / data_range
+            y_offset = round(value_fraction * self.height()/2)
+            y.append(n * x_scale)
+            y.append(self.height()/2 - y_offset)
+        return y
+
+    def paintEvent(self, paint_event):
+        """!
+        Redraws the widget.  Two display lines are supported;
+        one black and one red.
+        """
+        painter = qtg.QPainter(self)
+
+        # draw the background
+        brush = qtg.QBrush(qtc.Qt.white)
+        painter.setBrush(brush)
+        painter.drawRect(0, 0, self.width(), self.height())
+
+        # Draw Line 1
+        pen = qtg.QPen()
+        path = self.scale_values(self.Line1)
+        myLine = qtg.QPolygon()
+        myLine.setPoints(path)
+        pen.setColor(qtg.QColor("red"))
+        painter.setPen(pen)
+        painter.drawPolyline(myLine)
+
+        # Draw Line 2
+        path = self.scale_values(self.Line2)
+        myLine = qtg.QPolygon()
+        myLine.setPoints(path)
+        pen.setColor(qtg.QColor("black"))
+        painter.setPen(pen)
+        painter.drawPolyline(myLine)
+
+
+# ==========================================================
+class MainWindow(qtw.QMainWindow):
+    """
+    GUI window for the application.
+    """
+    # create a signal (replot) tied to the slot update_data()
+    # new_data = qtc.pyqtSignal()
+
     def __init__(self):
-        super(QResizingPixmapLabel, self).__init__()
-        self.setMinimumSize(1, 1)
-        self.setScaledContents(False)
-        self._pixmap: Union[QPixmap, None] = None
+        """MainWindow constructor."""
+        super().__init__()
+        # Code starts here
+        self.resize(qtw.QDesktopWidget().availableGeometry(self).size() * 0.7)
+        # self.new_data.connect(self.update_plot_data)
 
-    def heightForWidth(self, width: int) -> int:
-        if self._pixmap is None:
-            return self.height()
-        else:
-            return self._pixmap.height() * width / self._pixmap.width()
-
-    def scaledPixmap(self) -> QPixmap:
-        scaled = self._pixmap.scaled(
-            self.size() * self.devicePixelRatioF(),
-            Qt.KeepAspectRatio,
-            Qt.SmoothTransformation
+        # Create the push buttons
+        self.button1 = qtw.QPushButton("START")
+        self.button2 = qtw.QPushButton("STOP")
+        self.button3 = qtw.QPushButton("Done")
+        # create a plot from a plot widget
+        self.plot = GraphWidget()
+        self.plot.setSizePolicy(
+            qtw.QSizePolicy.Expanding,
+            qtw.QSizePolicy.Expanding,
         )
-        # scaled.setDevicePixelRatio(self.devicePixelRatioF())
-        return scaled
 
-    def setPixmap(self, pixmap: QPixmap) -> None:
-        self._pixmap = pixmap
-        super().setPixmap(pixmap)
+        # build the layout
+        layout = qtw.QVBoxLayout()
+        layout.addWidget(self.button1)
+        layout.addWidget(self.button2)
+        layout.addWidget(self.button3)
+        layout.addWidget(self.plot)
 
-    def sizeHint(self) -> QSize:
-        width = self.width()
-        return QSize(width, self.heightForWidth(width))
+        # put the layout in a container
+        container = qtw.QWidget()
+        container.setLayout(layout)
 
-    def resizeEvent(self, event: QResizeEvent) -> None:
-        if self._pixmap is not None:
-            super().setPixmap(self.scaledPixmap())
-            self.setAlignment(Qt.AlignCenter)
+        # put the containe in the window frame
+        self.setCentralWidget(container)
+
+        # Start the Show!
+        self.show()
+
+    @qtc.pyqtSlot()
+    def done_button(self):
+        """
+        Event handler for the Done button.
+        Stops the application.
+        """
+        # Terminate the exec_ loop
+        qtc.QCoreApplication.quit()
 
 
 # ==========================================================
-class Thread(QThread):
+class FakeThread(qtc.QThread):
+    """
+    Fake worker thread.  No serial port is used.
+    Data is generated using a random() function.
+    """
+
+    result = qtc.pyqtSignal(float, float)
+
+    def __init__(self):
+        super().__init__()
+        self.remote_is_running = False
+        self.is_running = False
+
+    def run(self):
+        """
+        Fakes data that would be read from a serial port.
+        Two values are generated.  The "is_running" flag
+        controls when the run() method will terminate.
+        The "remote_is_running" determines when to simulate
+        receiving a serial packet.
+        """
+        self.is_running = True
+        while self.is_running:
+            time.sleep(0.25)
+            if self.remote_is_running:
+                x = random.random() - 0.5
+                y = random.random() - 0.5
+                self.result.emit(x, y)
+
+    @qtc.pyqtSlot()
+    def stop(self):
+        """
+        Event handler for the Done button
+        """
+        self.stop_remote()
+        self.is_running = False
+
+    @qtc.pyqtSlot()
+    def stop_remote(self):
+        """
+        Event handler for the Stop button
+        """
+        self.remote_is_running = False
+
+    @qtc.pyqtSlot()
+    def start_remote(self):
+        """
+        Event handler for the Start button
+        """
+        self.remote_is_running = True
+
+
+# ==========================================================
+class Thread(qtc.QThread):
     """
     Worker thread.
     Signals when new data arrives.
@@ -96,7 +237,7 @@ class Thread(QThread):
     Reads from serial port ONLY if data waiting.
     """
 
-    result = pyqtSignal(float, float)
+    result = qtc.pyqtSignal(float, float)
 
     def __init__(self, serialPort):
         super().__init__()
@@ -126,7 +267,7 @@ class Thread(QThread):
                     except Exception as e:
                         print(e)
 
-    @pyqtSlot()
+    @qtc.pyqtSlot()
     def stop(self):
         """
         Event handler for the Done button
@@ -134,7 +275,7 @@ class Thread(QThread):
         self.stop_remote()
         self.is_running = False
 
-    @pyqtSlot()
+    @qtc.pyqtSlot()
     def stop_remote(self):
         """
         Event handler for the Stop button
@@ -142,7 +283,7 @@ class Thread(QThread):
         # note the string termination
         self.serialPort.write(bytes('L\n', 'UTF-8'))
 
-    @pyqtSlot()
+    @qtc.pyqtSlot()
     def start_remote(self):
         """
         Event handler for the Start button
@@ -152,165 +293,57 @@ class Thread(QThread):
 
 
 # ==========================================================
-class MainWindow(QMainWindow):
+def open_serial(args):
+    """!
+    Opens one of several serial ports - uses the first
+    one that works.  Returns the serial port object if a serial port is
+    connected, None otherwise
     """
-    GUI window for the application.
-    """
-    # create a signal (replot) tied to the slot update_plot_data()
-    replot = pyqtSignal()
-
-    def __init__(self):
-        super().__init__()
-        self.resize(QDesktopWidget().availableGeometry(self).size() * 0.7)
-        self.replot.connect(self.update_plot_data)
-
-        # Create the push buttons
-        self.button1 = QPushButton("START")
-        self.button2 = QPushButton("STOP")
-        self.button3 = QPushButton("Done")
-        # create a plot from a label widget
-        self.label = QResizingPixmapLabel()
-        self.label.setSizePolicy(
-            QSizePolicy.Expanding,
-            QSizePolicy.Expanding,
-        )
-
-        # build the layout
-        layout = QVBoxLayout()
-        layout.addWidget(self.button1)
-        layout.addWidget(self.button2)
-        layout.addWidget(self.button3)
-        layout.addWidget(self.label)
-
-        # put the layout in a container
-        container = QWidget()
-        container.setLayout(layout)
-
-        # put the containe in the window frame
-        self.setCentralWidget(container)
-
-        # Start the Show!
-        # This must be done to retrieve the proper
-        # label dimensions
-        self.show()
-
-        # now add a canvas to the Qlabel widget
-        # this is done after the layout enabling us
-        # to capture the final label size
-        print("Initial Canvas: x is ", self.label.width(), " y is ", self.label.height())
-        canvas = QPixmap(self.label.width(), self.label.height())
-        canvas.fill(Qt.white)
-        self.label.setPixmap(canvas)
-        self.w = self.label.pixmap().width()
-        self.hh = self.label.pixmap().height()//2
-
-        # these lists hold data for the two lines to be plotted
-        self.npoints = 100
-        self.Line1 = [0 for x in range(self.npoints)]
-        self.Line2 = [0 for x in range(self.npoints)]
-        self.replot.emit()
-
-    @pyqtSlot()
-    def done_button(self):
-        """
-        Event handler for the Done button.
-        Stops the application.
-        """
-        # Terminate the exec_ loop
-        QCoreApplication.quit()
-
-    @pyqtSlot(float, float)
-    def append_data(self, x, y):
-        """
-        Updates the display with the latest data
-        received from the serial connection.
-        """
-        self.Line1 = self.Line1[1:]  # Remove the first element.
-        self.Line1.append(int(x))  # add the new value.
-
-        self.Line2 = self.Line2[1:]  # Remove the first element.
-        self.Line2.append(int(y))  # Add the new value.
-
-        # use a signal here (as opposed to a function call)
-        # to avoid tangling with replotting
-        # that may be done when resizing
-        self.replot.emit()
-
-    @pyqtSlot()
-    def update_plot_data(self):
-        """
-        replot the canvas with current data
-        """
-        w = self.label.pixmap().width()
-        hh = self.label.pixmap().height()//2
-        # rescale based on the latest data
-        max_X = max(self.Line1) + 1e-5
-        min_X = min(self.Line1) - 1e-5
-        max_Y = max(self.Line2) + 1e-5
-        min_Y = min(self.Line2) - 1e-5
-        max_all = max(max_X, -min_X, max_Y, -min_Y)
-
-        # build the lists reqired for drawPolyLine
-        coordsX, coordsY = [], []
-        for n in range(0, self.npoints):
-            x = (self.w * n) / self.npoints
-            coordsX.append(x)
-            coordsY.append(x)
-            # scale and translate the data to screen
-            # coordinates with 0 at the vertical centerline
-            # of the plot
-            coordsX.append(self.hh * (1 - self.Line1[n] / max_all))
-            coordsY.append(self.hh * (1 - self.Line2[n] / max_all))
-        # retrieve the current canvas from the pixmap
-        canvas = self.label.pixmap()
-        # blank the canvas for repainting
-        canvas.fill(Qt.white)
-        painter = QPainter(self.label.pixmap())
-        pen = QPen()
-        myLine = QPolygon()
-
-        pen.setColor(QColor("red"))
-        painter.setPen(pen)
-        myLine.setPoints(coordsX)
-        painter.drawPolyline(myLine)
-
-        pen.setColor(QColor("black"))
-        painter.setPen(pen)
-        myLine.setPoints(coordsY)
-        painter.drawPolyline(myLine)
-
-        painter.end()
-        self.update()
+    baudrate = 9600
+    ports = ['/dev/tty.usbmodem14101',
+             '/dev/tty.usbmodem14103']
+    if len(args) > 1:
+        ports.append(args[1])
+    if len(args) > 2:
+        baudrate = int(args[2])
+    # pick a port, depending on the microcontroller used
+    serial_success = False
+    for io_unit in ports:
+        try:
+            print("Trying ", io_unit)
+            serialPort = Serial(io_unit, baudrate, rtscts=True)
+            serial_success = True
+        except SerialException:
+            print("Serial exception")
+        if serial_success:  # break if connected
+            break
+    if serial_success:
+        return serialPort
+    else:
+        return None
 
 
 # ==========================================================
 def main(args=None):
     if args is None:
         args = sys.argv
-    if len(args) > 1:
-        port = args[1]
-    if len(args) > 2:
-        baudrate = int(args[2])
-    # pick a port, depending on the microcontroller used
-    # port, baudrate = '/dev/tty.usbmodem14101', 9600  # uno
-    port, baudrate = '/dev/tty.usbmodem14103', 9600  # stm32
 
-    app = QApplication(sys.argv)
-    try:
-        serialPort = Serial(port, baudrate, rtscts=True)
+    app = qtw.QApplication(sys.argv)
+
+    serialPort = open_serial(args)
+    if serialPort is None:
+        print("Serial connection not active, using a dummy\n")
+        worker = FakeThread()
+    else:
         print("Reset Arduino")
         time.sleep(2)
-    except SerialException:
-        print("Sorry, invalid serial port.\n")
-        print("Did you update it in the script?\n")
-        sys.exit(1)
+        # create the worker thread and the window
+        worker = Thread(serialPort)
 
-    # create the worker thread and the window
-    worker = Thread(serialPort)
     window = MainWindow()
 
     # configure the call-backs
-    worker.result.connect(window.append_data)
+    worker.result.connect(window.plot.add_value)
     window.button1.clicked.connect(worker.start_remote)
     window.button2.clicked.connect(worker.stop_remote)
     window.button3.clicked.connect(worker.stop)
